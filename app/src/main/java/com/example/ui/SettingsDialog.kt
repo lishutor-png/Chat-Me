@@ -288,36 +288,88 @@ fun SettingsDialog(
                         }
                     }
 
-                    // 5. Opsi Tambahan / API Key (Opsional)
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showAdvanced = !showAdvanced }
-                        ) {
-                            Text(
-                                text = "Pengaturan Lanjutan (Opsional)",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                            Spacer(modifier = Modifier.weight(1f))
-                            Icon(
-                                imageVector = if (showAdvanced) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.outline
-                            )
-                        }
+                    // 5. Kunci API Gemini (Input Manual Mandiri)
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.VpnKey,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Kunci API Gemini (Opsional/Mandiri)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
 
-                        AnimatedVisibility(visible = showAdvanced) {
-                            Column(modifier = Modifier.padding(top = 8.dp)) {
-                                OutlinedTextField(
-                                    value = customApiKey,
-                                    onValueChange = { customApiKey = it },
-                                    label = { Text("Custom Gemini API Key") },
-                                    placeholder = { Text("Kosongkan untuk memakai bawaan") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = "Masukkan API key Gemini Anda sendiri agar aplikasi dapat merespon secara mandiri kapan saja di ponsel Anda.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            OutlinedTextField(
+                                value = customApiKey,
+                                onValueChange = { customApiKey = it },
+                                label = { Text("Gemini API Key") },
+                                placeholder = { Text("AIzaSy...") },
+                                singleLine = true,
+                                trailingIcon = {
+                                    if (customApiKey.isNotBlank()) {
+                                        IconButton(onClick = { customApiKey = "" }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Clear,
+                                                contentDescription = "Hapus API Key",
+                                                tint = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Status badge
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (customApiKey.isNotBlank()) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                }
+                            ) {
+                                Text(
+                                    text = if (customApiKey.isNotBlank()) {
+                                        "✅ Menggunakan API Key Mandiri Anda"
+                                    } else {
+                                        "ℹ️ Menggunakan API bawaan sistem (kosongkan jika tidak punya)"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (customApiKey.isNotBlank()) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                 )
                             }
                         }

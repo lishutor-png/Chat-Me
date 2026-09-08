@@ -22,8 +22,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val database = ChatDatabase.getDatabase(application)
     private val repository = ChatRepository(database.chatDao())
     private val geminiClient = GeminiApiClient()
+    private val configPrefs = com.example.data.local.ConfigPreferences(application)
 
-    private val _config = MutableStateFlow(CompanionConfig())
+    private val _config = MutableStateFlow(configPrefs.loadConfig())
     val config: StateFlow<CompanionConfig> = _config.asStateFlow()
 
     private val _isGenerating = MutableStateFlow(false)
@@ -147,10 +148,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateConfig(newConfig: CompanionConfig) {
         _config.value = newConfig
+        configPrefs.saveConfig(newConfig)
     }
 
     fun toggleMode(targetMode: ChatMode) {
-        _config.value = _config.value.copy(mode = targetMode)
+        val updated = _config.value.copy(mode = targetMode)
+        _config.value = updated
+        configPrefs.saveConfig(updated)
     }
 
     fun clearHistory() {

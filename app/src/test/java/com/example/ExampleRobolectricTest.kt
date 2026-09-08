@@ -27,4 +27,20 @@ class ExampleRobolectricTest {
     assertEquals("Aria", config.botName)
     assertEquals("Kamu", config.userName)
   }
+
+  @Test
+  fun `custom api key and config can be persisted and loaded`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val prefs = com.example.data.local.ConfigPreferences(context)
+    val customConfig = com.example.data.model.CompanionConfig(
+        botName = "Mimi",
+        userName = "Mas Lutfi",
+        customApiKey = "AIzaSyTestApiKey123"
+    )
+    prefs.saveConfig(customConfig)
+    val loaded = prefs.loadConfig()
+    assertEquals("Mimi", loaded.botName)
+    assertEquals("Mas Lutfi", loaded.userName)
+    assertEquals("AIzaSyTestApiKey123", loaded.customApiKey)
+  }
 }
