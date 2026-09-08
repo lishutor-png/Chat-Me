@@ -1,0 +1,6 @@
+{
+  "name": "chatme",
+  "description": "Teman curhat dan pacar virtual pribadi dengan obrolan hangat, aman terenkripsi, dan antarmuka yang simpel dan nyaman.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
