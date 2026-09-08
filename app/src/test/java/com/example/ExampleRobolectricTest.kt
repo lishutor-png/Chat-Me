@@ -24,6 +24,7 @@ class ExampleRobolectricTest {
     val config = com.example.data.model.CompanionConfig()
     assertEquals(com.example.data.model.CompanionPersonality.SWEET_GIRLFRIEND, config.personality)
     assertEquals(com.example.data.model.ChatMode.STANDARD, config.mode)
+    assertEquals(com.example.data.model.ContentFilterLevel.OFF, config.filterLevel)
     assertEquals("Aria", config.botName)
     assertEquals("Kamu", config.userName)
   }

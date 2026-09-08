@@ -37,11 +37,11 @@ class ConfigPreferences(context: Context) {
             ChatMode.STANDARD
         }
 
-        val filterLevelStr = prefs.getString(KEY_FILTER_LEVEL, ContentFilterLevel.BALANCED.name)
+        val filterLevelStr = prefs.getString(KEY_FILTER_LEVEL, ContentFilterLevel.OFF.name)
         val filterLevel = try {
-            ContentFilterLevel.valueOf(filterLevelStr ?: ContentFilterLevel.BALANCED.name)
+            ContentFilterLevel.valueOf(filterLevelStr ?: ContentFilterLevel.OFF.name)
         } catch (_: Exception) {
-            ContentFilterLevel.BALANCED
+            ContentFilterLevel.OFF
         }
 
         val customApiKey = prefs.getString(KEY_CUSTOM_API_KEY, "") ?: ""

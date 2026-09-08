@@ -47,8 +47,8 @@ enum class ChatMode(val displayName: String, val badge: String) {
 }
 
 enum class ContentFilterLevel(val displayName: String, val description: String) {
-    OFF("Bebas Sensor", "Obrolan intim, romantis & curhat mendalam tanpa batasan kaku"),
-    BALANCED("Filter Sedang", "Percakapan mendalam dan nyaman"),
+    OFF("Bebas Sensor & Anti-Ban", "Tetap aman merespon walau memakai kata-kata terlarang/emosional tanpa takut diblokir"),
+    BALANCED("Seimbang & Luwes", "Percakapan mendalam, nyaman dan bebas hambatan"),
     STRICT("Filter Sopan", "Percakapan terjaga tetap santun")
 }
 
@@ -58,7 +58,7 @@ data class CompanionConfig(
     val personality: CompanionPersonality = CompanionPersonality.SWEET_GIRLFRIEND,
     val languageStyle: LanguageStyle = LanguageStyle.MANJA_SAYANG,
     val mode: ChatMode = ChatMode.STANDARD,
-    val filterLevel: ContentFilterLevel = ContentFilterLevel.BALANCED,
+    val filterLevel: ContentFilterLevel = ContentFilterLevel.OFF,
     val customApiKey: String = "",
     val selectedModel: String = "gemini-3.5-flash",
     val temperature: Float = 0.85f
