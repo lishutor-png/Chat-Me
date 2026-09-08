@@ -29,6 +29,53 @@ jobs:
           fi
           chmod +x gradlew
 
+      - name: Prepare Debug Keystore
+        run: |
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          elif [ ! -f debug.keystore ]; then
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Prepare Environment and Google Services
+        run: |
+          if [ ! -f .env ] && [ -f .env.example ]; then
+            cp .env.example .env
+          fi
+          if [ ! -f app/google-services.json ]; then
+            cat << 'EOF' > app/google-services.json
+          {
+            "project_info": {
+              "project_number": "1234567890",
+              "project_id": "chatme-mock",
+              "storage_bucket": "chatme-mock.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:1234567890:android:mockapp",
+                  "android_client_info": {
+                    "package_name": "com.aistudio.ariacompanion.vxrtzk"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "mock_api_key"
+                  }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": []
+                  }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+          fi
+
       - name: Build Debug APK
         run: ./gradlew assembleDebug
 
