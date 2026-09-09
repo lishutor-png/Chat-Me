@@ -60,6 +60,14 @@ data class CompanionConfig(
     val mode: ChatMode = ChatMode.STANDARD,
     val filterLevel: ContentFilterLevel = ContentFilterLevel.OFF,
     val customApiKey: String = "",
+    val customApiKeys: List<String> = emptyList(),
     val selectedModel: String = "gemini-3.5-flash",
     val temperature: Float = 0.85f
-)
+) {
+    fun getActiveApiKeys(): List<String> {
+        val list = customApiKeys.map { it.trim() }.filter { it.isNotBlank() }
+        if (list.isNotEmpty()) return list
+        if (customApiKey.isNotBlank()) return listOf(customApiKey.trim())
+        return emptyList()
+    }
+}

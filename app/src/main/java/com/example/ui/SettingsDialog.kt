@@ -32,7 +32,14 @@ fun SettingsDialog(
     var selectedStyle by remember { mutableStateOf(currentConfig.languageStyle) }
     var mode by remember { mutableStateOf(currentConfig.mode) }
     var filterLevel by remember { mutableStateOf(currentConfig.filterLevel) }
-    var customApiKey by remember { mutableStateOf(currentConfig.customApiKey) }
+    val initialKeys = remember(currentConfig) {
+        val list = currentConfig.getActiveApiKeys().toMutableList()
+        if (list.isEmpty()) {
+            list.add("")
+        }
+        list
+    }
+    var apiKeys by remember { mutableStateOf(initialKeys.toList()) }
     var showAdvanced by remember { mutableStateOf(false) }
     var showClearConfirmation by remember { mutableStateOf(false) }
 
@@ -296,7 +303,7 @@ fun SettingsDialog(
                         }
                     }
 
-                    // 5. Kunci API Gemini (Input Manual Mandiri)
+                    // 5. Kunci API Gemini (Multi-Slot Bergantian / Round-Robin)
                     Card(
                         shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(
@@ -316,63 +323,124 @@ fun SettingsDialog(
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Kunci API Gemini (Opsional/Mandiri)",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
+                                Column {
+                                    Text(
+                                        text = "Slot Kunci API Gemini (Multi-Key)",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Bergantian otomatis untuk menambah durasi pemakaian",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             }
 
                             Spacer(modifier = Modifier.height(6.dp))
 
                             Text(
-                                text = "Masukkan API key Gemini Anda sendiri agar aplikasi dapat merespon secara mandiri kapan saja di ponsel Anda.",
+                                text = "Masukkan satu atau beberapa API key Gemini Anda. Aplikasi akan menggunakannya secara bergantian (Round-Robin) dari slot pertama sampai terakhir. Jika salah satu kunci limit, otomatis beralih ke kunci berikutnya.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            OutlinedTextField(
-                                value = customApiKey,
-                                onValueChange = { customApiKey = it },
-                                label = { Text("Gemini API Key") },
-                                placeholder = { Text("AIzaSy...") },
-                                singleLine = true,
-                                trailingIcon = {
-                                    if (customApiKey.isNotBlank()) {
-                                        IconButton(onClick = { customApiKey = "" }) {
-                                            Icon(
-                                                imageVector = Icons.Default.Clear,
-                                                contentDescription = "Hapus API Key",
-                                                tint = MaterialTheme.colorScheme.outline
+                            // Daftar Slot Kunci API
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                apiKeys.forEachIndexed { index, keyVal ->
+                                    OutlinedTextField(
+                                        value = keyVal,
+                                        onValueChange = { newVal ->
+                                            val updated = apiKeys.toMutableList()
+                                            updated[index] = newVal
+                                            apiKeys = updated
+                                        },
+                                        label = {
+                                            Text(
+                                                if (index == 0) "Kunci Slot 1 (Utama)"
+                                                else "Kunci Slot ${index + 1}"
                                             )
-                                        }
-                                    }
+                                        },
+                                        placeholder = { Text("AIzaSy...") },
+                                        singleLine = true,
+                                        trailingIcon = {
+                                            if (apiKeys.size > 1) {
+                                                IconButton(
+                                                    onClick = {
+                                                        val updated = apiKeys.toMutableList()
+                                                        updated.removeAt(index)
+                                                        apiKeys = updated
+                                                    }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.DeleteOutline,
+                                                        contentDescription = "Hapus Slot",
+                                                        tint = MaterialTheme.colorScheme.error
+                                                    )
+                                                }
+                                            } else if (keyVal.isNotBlank()) {
+                                                IconButton(
+                                                    onClick = {
+                                                        val updated = apiKeys.toMutableList()
+                                                        updated[0] = ""
+                                                        apiKeys = updated
+                                                    }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Clear,
+                                                        contentDescription = "Kosongkan Kunci",
+                                                        tint = MaterialTheme.colorScheme.outline
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Tombol Tambah Slot API Key
+                            OutlinedButton(
+                                onClick = {
+                                    apiKeys = apiKeys + ""
                                 },
+                                shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.fillMaxWidth()
-                            )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Tambah Slot Kunci API (${apiKeys.size})")
+                            }
 
                             Spacer(modifier = Modifier.height(8.dp))
 
                             // Status badge
+                            val validKeysCount = apiKeys.count { it.isNotBlank() }
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                color = if (customApiKey.isNotBlank()) {
+                                color = if (validKeysCount > 0) {
                                     MaterialTheme.colorScheme.primaryContainer
                                 } else {
                                     MaterialTheme.colorScheme.surfaceVariant
                                 }
                             ) {
                                 Text(
-                                    text = if (customApiKey.isNotBlank()) {
-                                        "✅ Menggunakan API Key Mandiri Anda"
-                                    } else {
-                                        "ℹ️ Menggunakan API bawaan sistem (kosongkan jika tidak punya)"
+                                    text = when {
+                                        validKeysCount > 1 -> "✅ $validKeysCount Kunci Tersedia — Rotasi Bergantian Aktif"
+                                        validKeysCount == 1 -> "✅ 1 Kunci Aktif (Bisa tambah slot lagi untuk bergantian)"
+                                        else -> "ℹ️ Menggunakan API bawaan sistem (kosongkan jika tidak punya)"
                                     },
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (customApiKey.isNotBlank()) {
+                                    color = if (validKeysCount > 0) {
                                         MaterialTheme.colorScheme.onPrimaryContainer
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -414,6 +482,7 @@ fun SettingsDialog(
                     }
                     Button(
                         onClick = {
+                            val cleanKeys = apiKeys.map { it.trim() }.filter { it.isNotBlank() }
                             val updated = currentConfig.copy(
                                 botName = botName.trim().ifBlank { "Aria" },
                                 userName = userName.trim().ifBlank { "Kamu" },
@@ -421,7 +490,8 @@ fun SettingsDialog(
                                 languageStyle = selectedStyle,
                                 mode = mode,
                                 filterLevel = filterLevel,
-                                customApiKey = customApiKey.trim()
+                                customApiKey = cleanKeys.firstOrNull() ?: "",
+                                customApiKeys = cleanKeys
                             )
                             onSave(updated)
                             onDismiss()

@@ -28,18 +28,41 @@ class GeminiApiClient {
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
+    private val keyRotationCounter = java.util.concurrent.atomic.AtomicInteger(0)
+
+    fun getCandidateApiKeys(config: CompanionConfig): List<String> {
+        val configured = config.getActiveApiKeys()
+        val allKeys = if (configured.isNotEmpty()) {
+            configured
+        } else if (BuildConfig.GEMINI_API_KEY.isNotBlank() && BuildConfig.GEMINI_API_KEY != "MY_GEMINI_API_KEY") {
+            listOf(BuildConfig.GEMINI_API_KEY)
+        } else {
+            emptyList()
+        }
+
+        if (allKeys.isEmpty()) return emptyList()
+        if (allKeys.size == 1) return allKeys
+
+        // Rotasi berurutan bergantian dari kunci pertama sampai terakhir:
+        // Request 1: Kunci 0, Kunci 1, Kunci 2...
+        // Request 2: Kunci 1, Kunci 2, Kunci 0...
+        // Request 3: Kunci 2, Kunci 0, Kunci 1...
+        val startIndex = (keyRotationCounter.getAndIncrement() and Int.MAX_VALUE) % allKeys.size
+        val rotated = mutableListOf<String>()
+        for (i in allKeys.indices) {
+            rotated.add(allKeys[(startIndex + i) % allKeys.size])
+        }
+        return rotated
+    }
+
     fun streamChat(
         history: List<ChatMessage>,
         userMessage: String,
         config: CompanionConfig
     ): Flow<String> = flow {
-        val apiKey = when {
-            config.customApiKey.isNotBlank() -> config.customApiKey.trim()
-            BuildConfig.GEMINI_API_KEY.isNotBlank() && BuildConfig.GEMINI_API_KEY != "MY_GEMINI_API_KEY" -> BuildConfig.GEMINI_API_KEY
-            else -> ""
-        }
+        val candidateKeys = getCandidateApiKeys(config)
 
-        if (apiKey.isBlank()) {
+        if (candidateKeys.isEmpty()) {
             // Provide a natural, character-driven offline response if API key is not configured
             val fallback = generateCharacterFallback(userMessage, config)
             // Stream in small humanized chunks
@@ -52,89 +75,112 @@ class GeminiApiClient {
         }
 
         val model = if (config.selectedModel.isNotBlank()) config.selectedModel else "gemini-3.5-flash"
-        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?key=$apiKey&alt=sse"
-
         val requestBodyJson = buildRequestBody(history, userMessage, config)
-        val requestBody = requestBodyJson.toString().toRequestBody("application/json".toMediaType())
+        val requestBodyString = requestBodyJson.toString()
 
-        val request = Request.Builder()
-            .url(endpoint)
-            .post(requestBody)
-            .build()
+        var succeeded = false
+        var lastErrorMsg = ""
 
-        try {
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                val errorBody = response.body?.string().orEmpty()
-                Log.e("GeminiApiClient", "HTTP error ${response.code}: $errorBody")
-                // Graceful fallback for safety/blocked requests to avoid disruptions or bans
-                val fallback = generateSafetyComfortFallback(userMessage, config)
-                emit(fallback)
-                return@flow
-            }
+        for ((index, apiKey) in candidateKeys.withIndex()) {
+            val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?key=$apiKey&alt=sse"
+            val requestBody = requestBodyString.toRequestBody("application/json".toMediaType())
 
-            val body = response.body ?: throw IllegalStateException("Empty response body")
-            val reader = BufferedReader(InputStreamReader(body.byteStream()))
-            var line: String?
-            var emittedAny = false
+            val request = Request.Builder()
+                .url(endpoint)
+                .post(requestBody)
+                .build()
 
-            while (reader.readLine().also { line = it } != null) {
-                val curLine = line?.trim().orEmpty()
-                if (curLine.startsWith("data:")) {
-                    val jsonStr = curLine.removePrefix("data:").trim()
-                    if (jsonStr.isNotEmpty() && jsonStr != "[DONE]") {
-                        try {
-                            val json = JSONObject(jsonStr)
+            var response: okhttp3.Response? = null
+            try {
+                response = client.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string().orEmpty()
+                    Log.w("GeminiApiClient", "Key slot #$index failed (code ${response.code}): $errorBody. Switching to next key slot if available.")
+                    lastErrorMsg = "HTTP ${response.code}: $errorBody"
+                    // If more candidate keys exist, rotate to next key immediately!
+                    if (index < candidateKeys.size - 1) {
+                        continue
+                    } else {
+                        break
+                    }
+                }
 
-                            // 1. Check prompt feedback block
-                            val promptFeedback = json.optJSONObject("promptFeedback")
-                            if (promptFeedback != null) {
-                                val blockReason = promptFeedback.optString("blockReason", "")
-                                if (blockReason.isNotEmpty()) {
-                                    Log.w("GeminiApiClient", "Prompt blocked by safety filter: $blockReason")
-                                    val fallback = generateSafetyComfortFallback(userMessage, config)
-                                    emit(fallback)
-                                    return@flow
-                                }
-                            }
+                val body = response.body ?: throw IllegalStateException("Empty response body")
+                val reader = BufferedReader(InputStreamReader(body.byteStream()))
+                var line: String?
+                var emittedAny = false
 
-                            // 2. Check candidates
-                            val candidates = json.optJSONArray("candidates")
-                            if (candidates != null && candidates.length() > 0) {
-                                val firstCandidate = candidates.getJSONObject(0)
-                                val finishReason = firstCandidate.optString("finishReason", "")
+                while (reader.readLine().also { line = it } != null) {
+                    val curLine = line?.trim().orEmpty()
+                    if (curLine.startsWith("data:")) {
+                        val jsonStr = curLine.removePrefix("data:").trim()
+                        if (jsonStr.isNotEmpty() && jsonStr != "[DONE]") {
+                            try {
+                                val json = JSONObject(jsonStr)
 
-                                if (finishReason == "SAFETY" || finishReason == "BLOCKLIST") {
-                                    Log.w("GeminiApiClient", "Candidate finished with reason: $finishReason")
-                                    val fallback = generateSafetyComfortFallback(userMessage, config)
-                                    emit(fallback)
-                                    return@flow
-                                }
-
-                                val content = firstCandidate.optJSONObject("content")
-                                val parts = content?.optJSONArray("parts")
-                                if (parts != null && parts.length() > 0) {
-                                    val part = parts.getJSONObject(0)
-                                    val text = part.optString("text", "")
-                                    if (text.isNotEmpty()) {
-                                        emittedAny = true
-                                        emit(text)
+                                // 1. Check prompt feedback block
+                                val promptFeedback = json.optJSONObject("promptFeedback")
+                                if (promptFeedback != null) {
+                                    val blockReason = promptFeedback.optString("blockReason", "")
+                                    if (blockReason.isNotEmpty()) {
+                                        Log.w("GeminiApiClient", "Prompt blocked by safety filter: $blockReason")
+                                        val fallback = generateSafetyComfortFallback(userMessage, config)
+                                        emit(fallback)
+                                        return@flow
                                     }
                                 }
+
+                                // 2. Check candidates
+                                val candidates = json.optJSONArray("candidates")
+                                if (candidates != null && candidates.length() > 0) {
+                                    val firstCandidate = candidates.getJSONObject(0)
+                                    val finishReason = firstCandidate.optString("finishReason", "")
+
+                                    if (finishReason == "SAFETY" || finishReason == "BLOCKLIST") {
+                                        Log.w("GeminiApiClient", "Candidate finished with reason: $finishReason")
+                                        val fallback = generateSafetyComfortFallback(userMessage, config)
+                                        emit(fallback)
+                                        return@flow
+                                    }
+
+                                    val content = firstCandidate.optJSONObject("content")
+                                    val parts = content?.optJSONArray("parts")
+                                    if (parts != null && parts.length() > 0) {
+                                        val part = parts.getJSONObject(0)
+                                        val text = part.optString("text", "")
+                                        if (text.isNotEmpty()) {
+                                            emittedAny = true
+                                            emit(text)
+                                        }
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.w("GeminiApiClient", "Parsing SSE chunk error: ${e.message}")
                             }
-                        } catch (e: Exception) {
-                            Log.w("GeminiApiClient", "Parsing SSE chunk error: ${e.message}")
                         }
                     }
                 }
-            }
 
-            if (!emittedAny) {
-                val fallback = generateSafetyComfortFallback(userMessage, config)
-                emit(fallback)
+                if (emittedAny) {
+                    succeeded = true
+                    break
+                } else if (index < candidateKeys.size - 1) {
+                    // Empty response with this key, try next key
+                    continue
+                }
+            } catch (e: Exception) {
+                Log.w("GeminiApiClient", "Call failed on key slot #$index: ${e.message}. Trying next key.")
+                lastErrorMsg = e.message.orEmpty()
+                if (index < candidateKeys.size - 1) {
+                    continue
+                }
+            } finally {
+                response?.close()
             }
-        } catch (e: Exception) {
-            Log.e("GeminiApiClient", "Request execution failed: ${e.message}")
+        }
+
+        if (!succeeded) {
+            Log.e("GeminiApiClient", "All API keys failed or exhausted. Last error: $lastErrorMsg")
             val fallback = generateSafetyComfortFallback(userMessage, config)
             emit(fallback)
         }

@@ -45,6 +45,20 @@ class ConfigPreferences(context: Context) {
         }
 
         val customApiKey = prefs.getString(KEY_CUSTOM_API_KEY, "") ?: ""
+        val customApiKeysJson = prefs.getString(KEY_CUSTOM_API_KEYS, null)
+        val customApiKeys = if (!customApiKeysJson.isNullOrBlank()) {
+            try {
+                val jsonArr = org.json.JSONArray(customApiKeysJson)
+                (0 until jsonArr.length()).map { jsonArr.getString(it) }.filter { it.isNotBlank() }
+            } catch (_: Exception) {
+                if (customApiKey.isNotBlank()) listOf(customApiKey) else emptyList()
+            }
+        } else if (customApiKey.isNotBlank()) {
+            listOf(customApiKey)
+        } else {
+            emptyList()
+        }
+
         val selectedModel = prefs.getString(KEY_MODEL, "gemini-3.5-flash") ?: "gemini-3.5-flash"
         val temperature = prefs.getFloat(KEY_TEMPERATURE, 0.90f)
 
@@ -55,13 +69,18 @@ class ConfigPreferences(context: Context) {
             languageStyle = languageStyle,
             mode = mode,
             filterLevel = filterLevel,
-            customApiKey = customApiKey,
+            customApiKey = customApiKeys.firstOrNull() ?: customApiKey,
+            customApiKeys = customApiKeys,
             selectedModel = selectedModel,
             temperature = temperature
         )
     }
 
     fun saveConfig(config: CompanionConfig) {
+        val keysToSave = config.getActiveApiKeys()
+        val jsonArr = org.json.JSONArray()
+        keysToSave.forEach { jsonArr.put(it) }
+
         prefs.edit().apply {
             putString(KEY_BOT_NAME, config.botName)
             putString(KEY_USER_NAME, config.userName)
@@ -69,7 +88,8 @@ class ConfigPreferences(context: Context) {
             putString(KEY_LANGUAGE_STYLE, config.languageStyle.name)
             putString(KEY_MODE, config.mode.name)
             putString(KEY_FILTER_LEVEL, config.filterLevel.name)
-            putString(KEY_CUSTOM_API_KEY, config.customApiKey)
+            putString(KEY_CUSTOM_API_KEY, keysToSave.firstOrNull() ?: "")
+            putString(KEY_CUSTOM_API_KEYS, jsonArr.toString())
             putString(KEY_MODEL, config.selectedModel)
             putFloat(KEY_TEMPERATURE, config.temperature)
             apply()
@@ -84,6 +104,7 @@ class ConfigPreferences(context: Context) {
         private const val KEY_MODE = "key_mode"
         private const val KEY_FILTER_LEVEL = "key_filter_level"
         private const val KEY_CUSTOM_API_KEY = "key_custom_api_key"
+        private const val KEY_CUSTOM_API_KEYS = "key_custom_api_keys"
         private const val KEY_MODEL = "key_model"
         private const val KEY_TEMPERATURE = "key_temperature"
     }
