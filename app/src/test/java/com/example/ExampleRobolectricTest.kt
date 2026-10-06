@@ -74,4 +74,25 @@ class ExampleRobolectricTest {
     org.junit.Assert.assertTrue(startKeys.contains("AIzaKey2"))
     org.junit.Assert.assertTrue(startKeys.contains("AIzaKey3"))
   }
+
+  @Test
+  fun `custom profile avatar uri and api status are persisted and formatted`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val prefs = com.example.data.local.ConfigPreferences(context)
+    val avatarConfig = com.example.data.model.CompanionConfig(
+        botName = "Sinta",
+        avatarUri = "preset:flat_chat",
+        userAvatarUri = "/data/user/0/com.example/files/avatars/user_123.jpg"
+    )
+    prefs.saveConfig(avatarConfig)
+    val loaded = prefs.loadConfig()
+    assertEquals("Sinta", loaded.botName)
+    assertEquals("preset:flat_chat", loaded.avatarUri)
+    assertEquals("/data/user/0/com.example/files/avatars/user_123.jpg", loaded.userAvatarUri)
+
+    val client = com.example.data.remote.GeminiApiClient()
+    val masked = client.maskApiKey("AIzaSyD9876543210abcd")
+    org.junit.Assert.assertTrue(masked.startsWith("AIzaSy"))
+    org.junit.Assert.assertTrue(masked.endsWith("abcd"))
+  }
 }

@@ -62,7 +62,9 @@ data class CompanionConfig(
     val customApiKey: String = "",
     val customApiKeys: List<String> = emptyList(),
     val selectedModel: String = "gemini-3.5-flash",
-    val temperature: Float = 0.85f
+    val temperature: Float = 0.85f,
+    val avatarUri: String = "",
+    val userAvatarUri: String = ""
 ) {
     fun getActiveApiKeys(): List<String> {
         val list = customApiKeys.map { it.trim() }.filter { it.isNotBlank() }
@@ -71,3 +73,34 @@ data class CompanionConfig(
         return emptyList()
     }
 }
+
+enum class ApiHealthState {
+    CHECKING,
+    CONNECTED,
+    LIMITED_QUOTA,
+    DISCONNECTED,
+    FALLBACK_READY
+}
+
+data class KeySlotStatus(
+    val slotIndex: Int,
+    val maskedKey: String,
+    val isConnected: Boolean,
+    val statusCode: Int = 0,
+    val statusLabel: String = "",
+    val latencyMs: Long = 0L
+)
+
+data class ApiConfigStatusInfo(
+    val state: ApiHealthState = ApiHealthState.CHECKING,
+    val summaryTitle: String = "Memeriksa Koneksi API...",
+    val detailMessage: String = "Mengecek apakah API Config masih tersambung dan bisa diakses",
+    val activeKeyIndex: Int = 0,
+    val totalKeysCount: Int = 0,
+    val reachableKeysCount: Int = 0,
+    val usingSystemDefaultKey: Boolean = false,
+    val lastCheckedTimestamp: Long = 0L,
+    val latencyMs: Long? = null,
+    val slotStatuses: List<KeySlotStatus> = emptyList()
+)
+

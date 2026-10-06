@@ -61,6 +61,8 @@ class ConfigPreferences(context: Context) {
 
         val selectedModel = prefs.getString(KEY_MODEL, "gemini-3.5-flash") ?: "gemini-3.5-flash"
         val temperature = prefs.getFloat(KEY_TEMPERATURE, 0.90f)
+        val avatarUri = prefs.getString(KEY_AVATAR_URI, "") ?: ""
+        val userAvatarUri = prefs.getString(KEY_USER_AVATAR_URI, "") ?: ""
 
         return CompanionConfig(
             botName = botName,
@@ -72,7 +74,9 @@ class ConfigPreferences(context: Context) {
             customApiKey = customApiKeys.firstOrNull() ?: customApiKey,
             customApiKeys = customApiKeys,
             selectedModel = selectedModel,
-            temperature = temperature
+            temperature = temperature,
+            avatarUri = avatarUri,
+            userAvatarUri = userAvatarUri
         )
     }
 
@@ -92,6 +96,8 @@ class ConfigPreferences(context: Context) {
             putString(KEY_CUSTOM_API_KEYS, jsonArr.toString())
             putString(KEY_MODEL, config.selectedModel)
             putFloat(KEY_TEMPERATURE, config.temperature)
+            putString(KEY_AVATAR_URI, config.avatarUri)
+            putString(KEY_USER_AVATAR_URI, config.userAvatarUri)
             apply()
         }
     }
@@ -107,5 +113,7 @@ class ConfigPreferences(context: Context) {
         private const val KEY_CUSTOM_API_KEYS = "key_custom_api_keys"
         private const val KEY_MODEL = "key_model"
         private const val KEY_TEMPERATURE = "key_temperature"
+        private const val KEY_AVATAR_URI = "key_avatar_uri"
+        private const val KEY_USER_AVATAR_URI = "key_user_avatar_uri"
     }
 }
