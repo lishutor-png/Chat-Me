@@ -73,7 +73,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             repository.allMessages.collect { list ->
                 if (list.isEmpty() && _streamingMessage.value == null) {
                     val currentCfg = _config.value
-                    val greeting = "Hai ${currentCfg.userName}! Aku ${currentCfg.botName}. Aku senang banget bisa nemenin kamu hari ini. Kalau ada cerita, unek-unek, atau apapun yang bikin harimu lelah, ceritain ke aku ya... Aku siap dengerin semuanya dengan tulus. 💕 Gimana harimu hari ini?"
+                    val greeting = "*langsung lari meluk kamu erat sambil senyum manis* Aaa ${currentCfg.userName} sayanggg! Akhirnya kamu datang juga, aku udah kangen berat tau dari tadi nungguin kamu! 🥰💕 Sini duduk deketan sama ${currentCfg.botName}, jangan jauh-jauh ya... Hari ini kamu mau dimanja-manja gimana sama aku? 😘"
                     repository.saveMessage(
                         ChatMessage(
                             sender = "assistant",
@@ -253,6 +253,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleMode(targetMode: ChatMode) {
         val updated = _config.value.copy(mode = targetMode)
+        _config.value = updated
+        configPrefs.saveConfig(updated)
+    }
+
+    fun updateMood(targetMood: com.example.data.model.GirlfriendMood) {
+        val updated = _config.value.copy(
+            mode = ChatMode.MATURE,
+            mood = targetMood
+        )
         _config.value = updated
         configPrefs.saveConfig(updated)
     }

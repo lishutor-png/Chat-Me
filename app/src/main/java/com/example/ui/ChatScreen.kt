@@ -45,6 +45,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -61,6 +62,7 @@ import com.example.data.model.ApiHealthState
 import com.example.data.model.ChatMessage
 import com.example.data.model.ChatMode
 import com.example.data.model.CompanionConfig
+import com.example.data.model.GirlfriendMood
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -140,6 +142,26 @@ fun ChatScreen(
             onStatusChipClick = { showSecurityDialog = true },
             onSettingsClick = { showSettingsDialog = true }
         )
+
+        // 1b. Interactive Mood Pacar & Bucin Meter Bar (Auto-hides while typing for clean UX)
+        AnimatedVisibility(
+            visible = inputText.isEmpty(),
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            GirlfriendMoodBar(
+                currentMood = config.mood,
+                lovePercent = minOf(100, 82 + visibleMessages.size * 2),
+                onSelectMood = { newMood ->
+                    viewModel.updateMood(newMood)
+                    Toast.makeText(
+                        context,
+                        "Mood ${config.botName}: ${newMood.emoji} ${newMood.displayName}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            )
+        }
 
         // 2. Conversation Messages Area (Resizes smoothly when keyboard opens)
         LazyColumn(
@@ -601,16 +623,75 @@ fun ProfileAvatar(
 }
 
 @Composable
+private fun GirlfriendMoodBar(
+    currentMood: GirlfriendMood,
+    lovePercent: Int,
+    onSelectMood: (GirlfriendMood) -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Bucin / Love Meter Badge
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFFFCE4EC),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF48FB1))
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = "❤️ Bucin $lovePercent%",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFC2185B)
+                        )
+                    }
+                }
+            }
+
+            items(GirlfriendMood.values()) { moodItem ->
+                val selected = moodItem == currentMood
+                FilterChip(
+                    selected = selected,
+                    onClick = { onSelectMood(moodItem) },
+                    label = {
+                        Text(
+                            text = "${moodItem.emoji} ${moodItem.displayName}",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.height(28.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun QuickCurhatSuggestions(
     onSelectSuggestion: (String) -> Unit
 ) {
     val suggestions = listOf(
-        "Lagi capek banget hari ini... 🥺",
-        "Kangen kamu, lagi apa sekarang? 💕",
-        "Butuh peluk virtual & semangat 🫂",
-        "Tadi ada hal yang bikin sedih... 🌧️",
-        "Temenin ngobrol malam ini ya? 🌙",
-        "Boleh curhat sesuatu nggak? ☕"
+        "🤗 *Peluk kamu erat sambil nyender manja*",
+        "😘 *Kecup keningmu & bisikin kata sayang*",
+        "🔥 Malam ini pengen manja-manjaan berdua aja sama kamu...",
+        "🥺 Jangan ngambek dong sayang, sini aku bujuk & manjain...",
+        "😏 Coba gombalin aku yang paling bikin salting!",
+        "💕 Kangen berat sama kamu, lagi ngapain sayang?"
     )
 
     LazyRow(
@@ -645,6 +726,7 @@ private fun formatMessageAnnotatedText(rawText: String, isStreaming: Boolean): A
     return buildAnnotatedString {
         var i = 0
         while (i < cleaned.length) {
+            // 1. Check **bold**
             if (i + 1 < cleaned.length && cleaned[i] == '*' && cleaned[i + 1] == '*') {
                 val closeIdx = cleaned.indexOf("**", i + 2)
                 if (closeIdx != -1) {
@@ -652,6 +734,23 @@ private fun formatMessageAnnotatedText(rawText: String, isStreaming: Boolean): A
                         append(cleaned.substring(i + 2, closeIdx))
                     }
                     i = closeIdx + 2
+                    continue
+                }
+            }
+            // 2. Check *roleplay action* (single asterisk)
+            if (cleaned[i] == '*') {
+                val closeIdx = cleaned.indexOf('*', i + 1)
+                if (closeIdx != -1 && closeIdx > i + 1) {
+                    withStyle(
+                        SpanStyle(
+                            fontStyle = FontStyle.Italic,
+                            fontWeight = FontWeight.Medium
+                        )
+                    ) {
+                        append("✨ ")
+                        append(cleaned.substring(i + 1, closeIdx))
+                    }
+                    i = closeIdx + 1
                     continue
                 }
             }

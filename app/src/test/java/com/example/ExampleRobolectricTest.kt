@@ -22,8 +22,9 @@ class ExampleRobolectricTest {
   @Test
   fun `default companion config is set for intimate curhat and girlfriend`() {
     val config = com.example.data.model.CompanionConfig()
-    assertEquals(com.example.data.model.CompanionPersonality.SWEET_GIRLFRIEND, config.personality)
-    assertEquals(com.example.data.model.ChatMode.STANDARD, config.mode)
+    assertEquals(com.example.data.model.CompanionPersonality.FLIRTY_ROMANTIC, config.personality)
+    assertEquals(com.example.data.model.ChatMode.MATURE, config.mode)
+    assertEquals(com.example.data.model.GirlfriendMood.BUCIN_MANJA, config.mood)
     assertEquals(com.example.data.model.ContentFilterLevel.OFF, config.filterLevel)
     assertEquals("Aria", config.botName)
     assertEquals("Kamu", config.userName)

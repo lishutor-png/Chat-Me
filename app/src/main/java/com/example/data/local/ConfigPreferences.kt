@@ -6,6 +6,7 @@ import com.example.data.model.ChatMode
 import com.example.data.model.CompanionConfig
 import com.example.data.model.CompanionPersonality
 import com.example.data.model.ContentFilterLevel
+import com.example.data.model.GirlfriendMood
 import com.example.data.model.LanguageStyle
 
 class ConfigPreferences(context: Context) {
@@ -16,11 +17,11 @@ class ConfigPreferences(context: Context) {
         val botName = prefs.getString(KEY_BOT_NAME, "Aria") ?: "Aria"
         val userName = prefs.getString(KEY_USER_NAME, "Kamu") ?: "Kamu"
 
-        val personalityStr = prefs.getString(KEY_PERSONALITY, CompanionPersonality.SWEET_GIRLFRIEND.name)
+        val personalityStr = prefs.getString(KEY_PERSONALITY, CompanionPersonality.FLIRTY_ROMANTIC.name)
         val personality = try {
-            CompanionPersonality.valueOf(personalityStr ?: CompanionPersonality.SWEET_GIRLFRIEND.name)
+            CompanionPersonality.valueOf(personalityStr ?: CompanionPersonality.FLIRTY_ROMANTIC.name)
         } catch (_: Exception) {
-            CompanionPersonality.SWEET_GIRLFRIEND
+            CompanionPersonality.FLIRTY_ROMANTIC
         }
 
         val languageStyleStr = prefs.getString(KEY_LANGUAGE_STYLE, LanguageStyle.MANJA_SAYANG.name)
@@ -30,11 +31,18 @@ class ConfigPreferences(context: Context) {
             LanguageStyle.MANJA_SAYANG
         }
 
-        val modeStr = prefs.getString(KEY_MODE, ChatMode.STANDARD.name)
+        val modeStr = prefs.getString(KEY_MODE, ChatMode.MATURE.name)
         val mode = try {
-            ChatMode.valueOf(modeStr ?: ChatMode.STANDARD.name)
+            ChatMode.valueOf(modeStr ?: ChatMode.MATURE.name)
         } catch (_: Exception) {
-            ChatMode.STANDARD
+            ChatMode.MATURE
+        }
+
+        val moodStr = prefs.getString(KEY_MOOD, GirlfriendMood.BUCIN_MANJA.name)
+        val mood = try {
+            GirlfriendMood.valueOf(moodStr ?: GirlfriendMood.BUCIN_MANJA.name)
+        } catch (_: Exception) {
+            GirlfriendMood.BUCIN_MANJA
         }
 
         val filterLevelStr = prefs.getString(KEY_FILTER_LEVEL, ContentFilterLevel.OFF.name)
@@ -70,6 +78,7 @@ class ConfigPreferences(context: Context) {
             personality = personality,
             languageStyle = languageStyle,
             mode = mode,
+            mood = mood,
             filterLevel = filterLevel,
             customApiKey = customApiKeys.firstOrNull() ?: customApiKey,
             customApiKeys = customApiKeys,
@@ -91,6 +100,7 @@ class ConfigPreferences(context: Context) {
             putString(KEY_PERSONALITY, config.personality.name)
             putString(KEY_LANGUAGE_STYLE, config.languageStyle.name)
             putString(KEY_MODE, config.mode.name)
+            putString(KEY_MOOD, config.mood.name)
             putString(KEY_FILTER_LEVEL, config.filterLevel.name)
             putString(KEY_CUSTOM_API_KEY, keysToSave.firstOrNull() ?: "")
             putString(KEY_CUSTOM_API_KEYS, jsonArr.toString())
@@ -108,6 +118,7 @@ class ConfigPreferences(context: Context) {
         private const val KEY_PERSONALITY = "key_personality"
         private const val KEY_LANGUAGE_STYLE = "key_language_style"
         private const val KEY_MODE = "key_mode"
+        private const val KEY_MOOD = "key_mood"
         private const val KEY_FILTER_LEVEL = "key_filter_level"
         private const val KEY_CUSTOM_API_KEY = "key_custom_api_key"
         private const val KEY_CUSTOM_API_KEYS = "key_custom_api_keys"
