@@ -44,7 +44,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val lastLatencyMs: StateFlow<Long?> = _lastLatencyMs.asStateFlow()
 
     private val _apiStatus = MutableStateFlow(
-         buildInitialApiStatus(_config.value)
+         geminiClient.checkApiConfigAccess(_config.value)
     )
     val apiStatus: StateFlow<ApiConfigStatusInfo> = _apiStatus.asStateFlow()
 
@@ -84,53 +84,22 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        // Automatically check API connection in background on startup
-        verifyApiConnection(_config.value)
+        // Catatan Hemat Kuota: Tidak melakukan ping HTTP otomatis saat startup agar kuota API Key 100% awet untuk chat
     }
 
-    private fun buildInitialApiStatus(cfg: CompanionConfig): ApiConfigStatusInfo {
-        val (keys, isSys) = geminiClient.getRawActiveKeys(cfg)
-        return if (keys.isEmpty()) {
-            ApiConfigStatusInfo(
-                state = ApiHealthState.FALLBACK_READY,
-                summaryTitle = "Mode Mandiri (Tanpa API Key)",
-                detailMessage = "Belum ada API key eksternal. Chat tetap aktif dengan mode mandiri lokal.",
-                totalKeysCount = 0,
-                reachableKeysCount = 0
-            )
-        } else {
-            ApiConfigStatusInfo(
-                state = ApiHealthState.CONNECTED,
-                summaryTitle = if (isSys) "Tersambung • API Sistem Siap"
-                else if (keys.size > 1) "Tersambung • ${keys.size} Slot API Siap"
-                else "Tersambung • API Config Siap",
-                detailMessage = "API Config terkonfigurasi dan siap diakses.",
-                activeKeyIndex = 1,
-                totalKeysCount = keys.size,
-                reachableKeysCount = keys.size,
-                usingSystemDefaultKey = isSys
-            )
-        }
-    }
-
+    /**
+     * Menyegarkan status kesiapan slot API & mereset cooldown kuota secara LOKAL (0 Request HTTP / 0 Kuota).
+     */
     fun verifyApiConnection(configToTest: CompanionConfig = _config.value) {
-        if (_isCheckingApi.value) return
-        viewModelScope.launch {
-            _isCheckingApi.value = true
-            _apiStatus.value = _apiStatus.value.copy(
-                state = ApiHealthState.CHECKING,
-                summaryTitle = "Mengecek Koneksi API...",
-                detailMessage = "Memeriksa apakah API Config masih tersambung dan dapat diakses..."
+        _isCheckingApi.value = true
+        try {
+            val result = geminiClient.checkApiConfigAccess(
+                config = configToTest,
+                resetCooldowns = true
             )
-            try {
-                val result = geminiClient.checkApiConfigAccess(configToTest)
-                _apiStatus.value = result
-                if (result.latencyMs != null) {
-                    _lastLatencyMs.value = result.latencyMs
-                }
-            } finally {
-                _isCheckingApi.value = false
-            }
+            _apiStatus.value = result
+        } finally {
+            _isCheckingApi.value = false
         }
     }
 

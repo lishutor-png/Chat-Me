@@ -95,5 +95,15 @@ class ExampleRobolectricTest {
     val masked = client.maskApiKey("AIzaSyD9876543210abcd")
     org.junit.Assert.assertTrue(masked.startsWith("AIzaSy"))
     org.junit.Assert.assertTrue(masked.endsWith("abcd"))
+
+    // Verify zero-quota local status evaluation without network ping
+    val passiveStatus = client.checkApiConfigAccess(
+        com.example.data.model.CompanionConfig(
+            customApiKeys = listOf("AIzaSyValidFormatKey1234567890", "AIzaSySecondValidKey1234567890")
+        )
+    )
+    assertEquals(com.example.data.model.ApiHealthState.CONNECTED, passiveStatus.state)
+    assertEquals(2, passiveStatus.totalKeysCount)
+    assertEquals(2, passiveStatus.reachableKeysCount)
   }
 }

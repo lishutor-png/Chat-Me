@@ -543,13 +543,13 @@ fun SettingsDialog(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "5. Slot Kunci API & Status Koneksi",
+                                        text = "5. Slot Kunci API (Mode Hemat Kuota)",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "Bergantian otomatis & cek apakah API masih bisa diakses",
+                                        text = "Rotasi bergantian otomatis • Tanpa tes ping yang menguras kuota",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary
                                     )
@@ -730,15 +730,15 @@ fun SettingsDialog(
                                             color = MaterialTheme.colorScheme.onSecondary
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Mengecek...", style = MaterialTheme.typography.labelMedium)
+                                        Text("Menyegarkan...", style = MaterialTheme.typography.labelMedium)
                                     } else {
                                         Icon(
-                                            imageVector = Icons.Default.WifiFind,
+                                            imageVector = Icons.Default.Refresh,
                                             contentDescription = null,
                                             modifier = Modifier.size(16.dp)
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Cek Akses API", style = MaterialTheme.typography.labelMedium)
+                                        Text("Reset Status (0 Kuota)", style = MaterialTheme.typography.labelMedium)
                                     }
                                 }
                             }

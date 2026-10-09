@@ -98,7 +98,7 @@ fun SecurityDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Status API Config & Keamanan",
+                    text = "Status API Config (Mode Hemat Kuota)",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -107,7 +107,7 @@ fun SecurityDialog(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = "Informasi koneksi API real-time dan perlindungan privasi obrolanmu.",
+                    text = "Pemantauan pasif saat chat berlangsung (0 request tambahan — tidak menguras kuota API).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -235,15 +235,15 @@ fun SecurityDialog(
                                             strokeWidth = 2.dp
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Mengecek...", style = MaterialTheme.typography.labelSmall)
+                                        Text("Menyegarkan...", style = MaterialTheme.typography.labelSmall)
                                     } else {
                                         Icon(
                                             imageVector = Icons.Default.Refresh,
-                                            contentDescription = "Cek Ulang API",
+                                            contentDescription = "Reset Status API",
                                             modifier = Modifier.size(14.dp)
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Cek Akses API", style = MaterialTheme.typography.labelSmall)
+                                        Text("Reset Status (0 Kuota)", style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
                             }

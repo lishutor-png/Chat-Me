@@ -32,17 +32,33 @@ class GeminiApiClient {
         .writeTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    private val pingClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .build()
-
     private val keyRotationCounter = java.util.concurrent.atomic.AtomicInteger(0)
+
+    private data class PassiveSlotRecord(
+        val isHealthy: Boolean,
+        val statusCode: Int,
+        val statusLabel: String,
+        val latencyMs: Long = 0L,
+        val cooldownUntilMs: Long = 0L,
+        val updatedAtMs: Long = System.currentTimeMillis()
+    )
+
+    // Menyimpan status tiap kunci secara PASIF dari pemakaian chat nyata (0 request tambahan / hemat kuota 100%)
+    private val passiveSlotHistory = java.util.concurrent.ConcurrentHashMap<String, PassiveSlotRecord>()
+
+    fun clearPassiveCooldowns() {
+        passiveSlotHistory.clear()
+    }
 
     fun maskApiKey(key: String): String {
         val trimmed = key.trim()
         if (trimmed.length <= 8) return "••••••••"
         return "${trimmed.take(6)}••••${trimmed.takeLast(4)}"
+    }
+
+    private fun isKeyFormatPlausible(key: String): Boolean {
+        val trimmed = key.trim()
+        return trimmed.length >= 16 && !trimmed.contains(" ")
     }
 
     fun getRawActiveKeys(config: CompanionConfig): Pair<List<String>, Boolean> {
@@ -67,22 +83,42 @@ class GeminiApiClient {
         // Request 2: Kunci 1, Kunci 2, Kunci 0...
         // Request 3: Kunci 2, Kunci 0, Kunci 1...
         val startIndex = (keyRotationCounter.getAndIncrement() and Int.MAX_VALUE) % allKeys.size
-        val rotated = mutableListOf<String>()
+        val now = System.currentTimeMillis()
+        val readyKeys = mutableListOf<String>()
+        val coolingDownKeys = mutableListOf<String>()
+
         for (i in allKeys.indices) {
-            rotated.add(allKeys[(startIndex + i) % allKeys.size])
+            val k = allKeys[(startIndex + i) % allKeys.size]
+            val record = passiveSlotHistory[k]
+            if (record != null && record.cooldownUntilMs > now) {
+                coolingDownKeys.add(k)
+            } else {
+                readyKeys.add(k)
+            }
         }
-        return rotated
+        // Prioritaskan kunci yang tidak sedang cooldown limit kuota (429)
+        return readyKeys + coolingDownKeys
     }
 
-    suspend fun checkApiConfigAccess(config: CompanionConfig): ApiConfigStatusInfo = withContext(Dispatchers.IO) {
+    /**
+     * Mengecek kesiapan API Config secara LOKAL & PASIF (TANPA mengirim request HTTP ke server),
+     * sehingga 0% kuota API terpakai untuk pengecekan status.
+     */
+    fun checkApiConfigAccess(
+        config: CompanionConfig,
+        resetCooldowns: Boolean = false
+    ): ApiConfigStatusInfo {
+        if (resetCooldowns) {
+            passiveSlotHistory.clear()
+        }
         val (keys, isSystemKey) = getRawActiveKeys(config)
         val now = System.currentTimeMillis()
 
         if (keys.isEmpty()) {
-            return@withContext ApiConfigStatusInfo(
+            return ApiConfigStatusInfo(
                 state = ApiHealthState.FALLBACK_READY,
-                summaryTitle = "Mode Mandiri (Belum Ada API Key)",
-                detailMessage = "API Config eksternal belum diisi. Aplikasi tetap bisa digunakan dengan respon cerdas lokal. Tambahkan API Key di Pengaturan untuk akses penuh.",
+                summaryTitle = "Mode Mandiri (Tanpa API Key)",
+                detailMessage = "Belum ada API key eksternal. Aplikasi menggunakan respon cerdas lokal (0 kuota API). Tambahkan API Key di Pengaturan kapan saja.",
                 activeKeyIndex = 0,
                 totalKeysCount = 0,
                 reachableKeysCount = 0,
@@ -94,81 +130,102 @@ class GeminiApiClient {
         }
 
         val slotResults = mutableListOf<KeySlotStatus>()
-        var reachableCount = 0
+        var readyCount = 0
         var quotaLimitedCount = 0
         var bestLatency: Long? = null
         var firstActiveSlot = 0
 
         for ((index, apiKey) in keys.withIndex()) {
-            val start = System.currentTimeMillis()
-            val url = "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=$apiKey"
-            val req = Request.Builder().url(url).get().build()
-            var response: okhttp3.Response? = null
-            try {
-                response = pingClient.newCall(req).execute()
-                val elapsed = System.currentTimeMillis() - start
-                val code = response.code
-                if (response.isSuccessful) {
-                    reachableCount++
-                    if (bestLatency == null || elapsed < bestLatency) {
-                        bestLatency = elapsed
+            val masked = if (isSystemKey) "API Bawaan Sistem" else maskApiKey(apiKey)
+            val passive = passiveSlotHistory[apiKey]
+            val formatValid = isSystemKey || isKeyFormatPlausible(apiKey)
+
+            if (!formatValid) {
+                slotResults.add(
+                    KeySlotStatus(
+                        slotIndex = index + 1,
+                        maskedKey = masked,
+                        isConnected = false,
+                        statusCode = 400,
+                        statusLabel = "Format Kunci Kurang Tepat (Cek Kembali)",
+                        latencyMs = 0L
+                    )
+                )
+            } else if (passive != null) {
+                val isStillCoolingDown = passive.cooldownUntilMs > now
+                if (passive.isHealthy && !isStillCoolingDown) {
+                    readyCount++
+                    if (passive.latencyMs > 0L && (bestLatency == null || passive.latencyMs < bestLatency)) {
+                        bestLatency = passive.latencyMs
                     }
-                    if (firstActiveSlot == 0) {
-                        firstActiveSlot = index + 1
-                    }
+                    if (firstActiveSlot == 0) firstActiveSlot = index + 1
                     slotResults.add(
                         KeySlotStatus(
                             slotIndex = index + 1,
-                            maskedKey = if (isSystemKey) "API Bawaan Sistem" else maskApiKey(apiKey),
+                            maskedKey = masked,
                             isConnected = true,
-                            statusCode = code,
-                            statusLabel = "Tersambung & Bisa Diakses (${elapsed} ms)",
-                            latencyMs = elapsed
+                            statusCode = passive.statusCode,
+                            statusLabel = passive.statusLabel,
+                            latencyMs = passive.latencyMs
                         )
                     )
-                } else if (code == 429) {
+                } else if (passive.statusCode == 429 && isStillCoolingDown) {
                     quotaLimitedCount++
+                    val remainSec = ((passive.cooldownUntilMs - now) / 1000L).coerceAtLeast(1L)
                     slotResults.add(
                         KeySlotStatus(
                             slotIndex = index + 1,
-                            maskedKey = if (isSystemKey) "API Bawaan Sistem" else maskApiKey(apiKey),
+                            maskedKey = masked,
                             isConnected = false,
-                            statusCode = code,
-                            statusLabel = "Tersambung • Limit Kuota (HTTP 429)",
-                            latencyMs = elapsed
+                            statusCode = 429,
+                            statusLabel = "Istirahat Kuota (${remainSec} dtk) • Auto-Rotasi",
+                            latencyMs = passive.latencyMs
+                        )
+                    )
+                } else if (passive.statusCode == 429 && !isStillCoolingDown) {
+                    readyCount++
+                    if (firstActiveSlot == 0) firstActiveSlot = index + 1
+                    slotResults.add(
+                        KeySlotStatus(
+                            slotIndex = index + 1,
+                            maskedKey = masked,
+                            isConnected = true,
+                            statusCode = 200,
+                            statusLabel = "Siap Digunakan (Hemat Kuota)",
+                            latencyMs = passive.latencyMs
                         )
                     )
                 } else {
                     slotResults.add(
                         KeySlotStatus(
                             slotIndex = index + 1,
-                            maskedKey = if (isSystemKey) "API Bawaan Sistem" else maskApiKey(apiKey),
+                            maskedKey = masked,
                             isConnected = false,
-                            statusCode = code,
-                            statusLabel = "Tidak Valid / Ditolak (HTTP $code)",
-                            latencyMs = elapsed
+                            statusCode = passive.statusCode,
+                            statusLabel = passive.statusLabel,
+                            latencyMs = passive.latencyMs
                         )
                     )
                 }
-            } catch (e: Exception) {
-                val elapsed = System.currentTimeMillis() - start
+            } else {
+                // Belum dipakai chat, format valid -> Siap tanpa kuras kuota
+                readyCount++
+                if (firstActiveSlot == 0) firstActiveSlot = index + 1
                 slotResults.add(
                     KeySlotStatus(
                         slotIndex = index + 1,
-                        maskedKey = if (isSystemKey) "API Bawaan Sistem" else maskApiKey(apiKey),
-                        isConnected = false,
-                        statusCode = -1,
-                        statusLabel = "Tidak Dapat Diakses (Cek Jaringan)",
-                        latencyMs = elapsed
+                        maskedKey = masked,
+                        isConnected = true,
+                        statusCode = 200,
+                        statusLabel = "Siap Digunakan (Hemat Kuota • 0 Ping)",
+                        latencyMs = 0L
                     )
                 )
-            } finally {
-                response?.close()
             }
         }
 
         val overallState = when {
-            reachableCount > 0 -> ApiHealthState.CONNECTED
+            readyCount > 0 -> ApiHealthState.CONNECTED
             quotaLimitedCount > 0 -> ApiHealthState.LIMITED_QUOTA
             else -> ApiHealthState.DISCONNECTED
         }
@@ -176,35 +233,35 @@ class GeminiApiClient {
         val summary = when (overallState) {
             ApiHealthState.CONNECTED -> {
                 if (isSystemKey) {
-                    "Tersambung • API Sistem Aktif"
+                    "Siap • API Sistem (Hemat Kuota)"
                 } else if (keys.size > 1) {
-                    "Tersambung • $reachableCount/${keys.size} Slot API Bisa Diakses"
+                    "Siap • $readyCount/${keys.size} Slot API (Hemat Kuota)"
                 } else {
-                    "Tersambung • API Config Aktif"
+                    "Siap • API Config (Hemat Kuota)"
                 }
             }
-            ApiHealthState.LIMITED_QUOTA -> "Kuota API Penuh • Beralih ke Mode Cadangan"
-            ApiHealthState.DISCONNECTED -> "API Tidak Dapat Diakses (0/${keys.size} Aktif)"
+            ApiHealthState.LIMITED_QUOTA -> "Cooldown Kuota • Mode Cadangan"
+            ApiHealthState.DISCONNECTED -> "Periksa Format API Key (0/${keys.size} Siap)"
             else -> "Mode Mandiri Aktif"
         }
 
         val detail = when (overallState) {
             ApiHealthState.CONNECTED -> {
-                val rotInfo = if (keys.size > 1) "Rotasi bergantian aktif dari Slot 1 s/d ${keys.size}." else "Koneksi stabil dan siap digunakan."
-                "API Config masih tersambung dan dapat diakses dengan baik. $rotInfo"
+                val rotInfo = if (keys.size > 1) "Rotasi bergantian Slot 1 s/d ${keys.size} aktif." else "Slot kunci siap dipakai."
+                "Mode Hemat Kuota aktif: Tanpa tes ping di latar belakang sehingga kuota API 100% utuh untuk ngobrol. $rotInfo"
             }
-            ApiHealthState.LIMITED_QUOTA -> "Semua slot API key sedang mencapai batas kuota (HTTP 429). Tambahkan slot API key baru atau tunggu kuota pulih."
-            ApiHealthState.DISCONNECTED -> "Kunci API yang dimasukkan tidak valid atau tidak dapat menjangkau server. Periksa kembali API Key Anda di Pengaturan."
+            ApiHealthState.LIMITED_QUOTA -> "Slot API baru saja mencapai batas request per menit (HTTP 429) saat chat dan sedang diistirahatkan otomatis selama 60 detik."
+            ApiHealthState.DISCONNECTED -> "Format kunci API tampak belum sesuai atau ditolak saat pengiriman pesan terakhir. Silakan cek kembali di Pengaturan."
             else -> "Menggunakan mode mandiri."
         }
 
-        ApiConfigStatusInfo(
+        return ApiConfigStatusInfo(
             state = overallState,
             summaryTitle = summary,
             detailMessage = detail,
             activeKeyIndex = if (firstActiveSlot > 0) firstActiveSlot else 1,
             totalKeysCount = keys.size,
-            reachableKeysCount = reachableCount,
+            reachableKeysCount = readyCount,
             usingSystemDefaultKey = isSystemKey,
             lastCheckedTimestamp = now,
             latencyMs = bestLatency,
@@ -222,16 +279,7 @@ class GeminiApiClient {
         val candidateKeys = getCandidateApiKeys(config)
 
         if (candidateKeys.isEmpty()) {
-            onStatusUpdated?.invoke(
-                ApiConfigStatusInfo(
-                    state = ApiHealthState.FALLBACK_READY,
-                    summaryTitle = "Mode Mandiri (Tanpa API Key)",
-                    detailMessage = "Belum ada API key eksternal. Chat merespon menggunakan mode mandiri lokal.",
-                    totalKeysCount = 0,
-                    reachableKeysCount = 0,
-                    lastCheckedTimestamp = System.currentTimeMillis()
-                )
-            )
+            onStatusUpdated?.invoke(checkApiConfigAccess(config))
             // Provide a natural, character-driven offline response if API key is not configured
             val fallback = generateCharacterFallback(userMessage, config)
             // Stream in small humanized chunks
@@ -267,7 +315,16 @@ class GeminiApiClient {
                 response = client.newCall(request).execute()
                 if (!response.isSuccessful) {
                     val errorBody = response.body?.string().orEmpty()
+                    val elapsed = System.currentTimeMillis() - callStart
                     lastStatusCode = response.code
+                    val cooldown = if (response.code == 429) System.currentTimeMillis() + 60_000L else 0L
+                    passiveSlotHistory[apiKey] = PassiveSlotRecord(
+                        isHealthy = false,
+                        statusCode = response.code,
+                        statusLabel = if (response.code == 429) "Limit Kuota Chat (HTTP 429)" else "Gagal Saat Chat (HTTP ${response.code})",
+                        latencyMs = elapsed,
+                        cooldownUntilMs = cooldown
+                    )
                     Log.w("GeminiApiClient", "Key slot #$originalSlotNumber failed (code ${response.code}): $errorBody. Switching to next key slot if available.")
                     lastErrorMsg = "HTTP ${response.code}: $errorBody"
                     // If more candidate keys exist, rotate to next key immediately!
@@ -324,21 +381,23 @@ class GeminiApiClient {
                                         if (text.isNotEmpty()) {
                                             if (!emittedAny) {
                                                 val latency = System.currentTimeMillis() - callStart
-                                                onStatusUpdated?.invoke(
-                                                    ApiConfigStatusInfo(
-                                                        state = ApiHealthState.CONNECTED,
-                                                        summaryTitle = if (isSystemKey) "Tersambung • API Sistem Aktif"
-                                                        else if (rawKeys.size > 1) "Tersambung • Slot #$originalSlotNumber/${rawKeys.size} Aktif"
-                                                        else "Tersambung • API Config Aktif",
-                                                        detailMessage = "API Config tersambung dan baru saja merespon melalui Slot #$originalSlotNumber (${latency} ms).",
-                                                        activeKeyIndex = originalSlotNumber,
-                                                        totalKeysCount = rawKeys.size,
-                                                        reachableKeysCount = rawKeys.size,
-                                                        usingSystemDefaultKey = isSystemKey,
-                                                        lastCheckedTimestamp = System.currentTimeMillis(),
-                                                        latencyMs = latency
-                                                    )
+                                                passiveSlotHistory[apiKey] = PassiveSlotRecord(
+                                                    isHealthy = true,
+                                                    statusCode = 200,
+                                                    statusLabel = "Aktif Dipakai Chat (${latency} ms)",
+                                                    latencyMs = latency,
+                                                    cooldownUntilMs = 0L
                                                 )
+                                                val updatedPassiveStatus = checkApiConfigAccess(config).copy(
+                                                    state = ApiHealthState.CONNECTED,
+                                                    summaryTitle = if (isSystemKey) "Tersambung • API Sistem Aktif"
+                                                    else if (rawKeys.size > 1) "Tersambung • Slot #$originalSlotNumber/${rawKeys.size} Aktif"
+                                                    else "Tersambung • API Config Aktif",
+                                                    detailMessage = "Merespon via Slot #$originalSlotNumber (${latency} ms) • Mode Hemat Kuota (0 Ping Tambahan).",
+                                                    activeKeyIndex = originalSlotNumber,
+                                                    latencyMs = latency
+                                                )
+                                                onStatusUpdated?.invoke(updatedPassiveStatus)
                                             }
                                             emittedAny = true
                                             emit(text)
@@ -372,18 +431,12 @@ class GeminiApiClient {
 
         if (!succeeded) {
             Log.e("GeminiApiClient", "All API keys failed or exhausted. Last error: $lastErrorMsg")
-            onStatusUpdated?.invoke(
-                ApiConfigStatusInfo(
-                    state = if (lastStatusCode == 429) ApiHealthState.LIMITED_QUOTA else ApiHealthState.DISCONNECTED,
-                    summaryTitle = if (lastStatusCode == 429) "Limit Kuota API • Mode Cadangan" else "API Tidak Terjangkau • Mode Cadangan",
-                    detailMessage = "Semua slot API key gagal diakses ($lastErrorMsg). Dijawab menggunakan respon cadangan agar chat tidak terputus.",
-                    activeKeyIndex = 0,
-                    totalKeysCount = rawKeys.size,
-                    reachableKeysCount = 0,
-                    usingSystemDefaultKey = isSystemKey,
-                    lastCheckedTimestamp = System.currentTimeMillis()
-                )
+            val passiveFallbackStatus = checkApiConfigAccess(config).copy(
+                state = if (lastStatusCode == 429) ApiHealthState.LIMITED_QUOTA else ApiHealthState.DISCONNECTED,
+                summaryTitle = if (lastStatusCode == 429) "Limit Kuota API • Mode Cadangan" else "API Tidak Terjangkau • Mode Cadangan",
+                detailMessage = "Semua slot API sedang limit atau tidak terjangkau ($lastErrorMsg). Dijawab otomatis menggunakan mode cadangan."
             )
+            onStatusUpdated?.invoke(passiveFallbackStatus)
             val fallback = generateSafetyComfortFallback(userMessage, config)
             emit(fallback)
         }
@@ -413,9 +466,9 @@ class GeminiApiClient {
         }
         root.put("generationConfig", genConfig)
 
-        // 3. Contents (Take last 10 turns to maintain context without overloading token limit)
+        // 3. Contents (Take last 6 turns to maintain context while saving TPM token quota)
         val contents = JSONArray()
-        val recentHistory = history.takeLast(10)
+        val recentHistory = history.takeLast(6)
 
         for (msg in recentHistory) {
             val role = if (msg.sender == "user") "user" else "model"
